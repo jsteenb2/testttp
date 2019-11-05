@@ -1,123 +1,127 @@
 package testttp
 
 import (
+	"bytes"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 )
 
-// GET is a test utility to test a svr handles a GET call.
-func GET(t *testing.T, svr http.Handler, addr string, assertFns ...RecTestFn) {
-	t.Helper()
-	HTTP(t, svr, http.MethodGet, addr, nil, assertFns...)
+// Req is a request builder.
+type Req struct {
+	addr    string
+	method  string
+	body    io.Reader
+	headers []string
 }
 
-// POST is a test utility to test a svr handles a POST call.
-func POST(t *testing.T, svr http.Handler, addr string, body io.Reader, assertFns ...RecTestFn) {
-	t.Helper()
-	HTTP(t, svr, http.MethodPost, addr, body, assertFns...)
-}
-
-// PATCH is a test utility to test a svr handles a PATCH call.
-func PATCH(t *testing.T, svr http.Handler, addr string, body io.Reader, assertFns ...RecTestFn) {
-	t.Helper()
-	HTTP(t, svr, http.MethodPatch, addr, body, assertFns...)
-}
-
-// PUT is a test utility to test a svr handles a PUT call.
-func PUT(t *testing.T, svr http.Handler, addr string, body io.Reader, assertFns ...RecTestFn) {
-	t.Helper()
-	HTTP(t, svr, http.MethodPut, addr, body, assertFns...)
-}
-
-// DELETE is a test utility to test a svr handles a DELETE call.
-func DELETE(t *testing.T, svr http.Handler, addr string, assertFns ...RecTestFn) {
-	t.Helper()
-	HTTP(t, svr, http.MethodDelete, addr, nil, assertFns...)
-}
-
-// HTTP is a test utility to test a svr handles whatever call you provide it.
-func HTTP(
-	t *testing.T, svr http.Handler,
-	method, addr string, body io.Reader,
-	assertFns ...RecTestFn,
-) {
-	t.Helper()
-	req, w := httptest.NewRequest(method, addr, body), httptest.NewRecorder()
-
-	svr.ServeHTTP(w, req)
-
-	for _, fn := range assertFns {
-		fn(t, w)
+// HTTP runs creates a request for an http call.
+func HTTP(method, addr string, body io.Reader) *Req {
+	return &Req{
+		addr:   addr,
+		method: method,
+		body:   body,
 	}
 }
 
-// RecTestFn is a functional option to run assertions against the response of the http request
-// being made by the HTTP func or its relatives.
-type RecTestFn func(t *testing.T, w *httptest.ResponseRecorder)
-
-// Resp allows the body to be asserted and viewed per the function.
-func Resp(assertFn func(t *testing.T, w *httptest.ResponseRecorder)) RecTestFn {
-	return func(t *testing.T, w *httptest.ResponseRecorder) {
-		t.Helper()
-		assertFn(t, w)
-	}
+// Delete creates a DELETE request.
+func Delete(addr string) *Req {
+	return HTTP(http.MethodDelete, addr, nil)
 }
 
-// Status verifies the status code of the response matches the status provided.
-func Status(status int) RecTestFn {
-	return func(t *testing.T, w *httptest.ResponseRecorder) {
-		t.Helper()
-		if w.Code == status {
-			return
+// Get creates a GET request.
+func Get(addr string) *Req {
+	return HTTP(http.MethodGet, addr, nil)
+}
+
+// Patch creates a PATCH request.
+func Patch(addr string, body io.Reader) *Req {
+	return HTTP(http.MethodPatch, addr, body)
+}
+
+// Post creates a POST request.
+func Post(addr string, body io.Reader) *Req {
+	return HTTP(http.MethodPost, addr, body)
+}
+
+// Put creates a PUT request.
+func Put(addr string, body io.Reader) *Req {
+	return HTTP(http.MethodPut, addr, body)
+}
+
+// Headers allows the user to set headers on the http request.
+func (r *Req) Headers(k, v string, rest ...string) *Req {
+	r.headers = append(r.headers, k, v)
+	r.headers = append(r.headers, rest...)
+	return r
+}
+
+// Do runs the request against the provided handler.
+func (r *Req) Do(handler http.Handler) *Resp {
+	req := httptest.NewRequest(r.method, r.addr, r.body)
+	rec := httptest.NewRecorder()
+
+	for i := 0; i < len(r.headers); i += 2 {
+		if i+1 >= len(r.headers) {
+			break
 		}
+		k, v := r.headers[i], r.headers[i+1]
+		req.Header.Add(k, v)
+	}
 
-		t.Fatalf("received incorrect status code:\twant: %d\tgot: %d", status, w.Code)
+	handler.ServeHTTP(rec, req)
+
+	return &Resp{
+		Req: req,
+		Rec: rec,
 	}
 }
 
-// StatusOK verifies the status code is 200 (Status OK).
-func StatusOK() RecTestFn {
-	return Status(http.StatusOK)
+// Resp is a http recorder wrapper.
+type Resp struct {
+	Req *http.Request
+	Rec *httptest.ResponseRecorder
 }
 
-// StatusCreated verifies the status code is 201 (Status Created).
-func StatusCreated() RecTestFn {
-	return Status(http.StatusCreated)
+// Expect allows the assertions against the raw Resp.
+func (r *Resp) Expect(fn func(*Resp)) *Resp {
+	fn(r)
+	return r
 }
 
-// StatusAccepted verifies the status code is 202 (Status Accepted).
-func StatusAccepted() RecTestFn {
-	return Status(http.StatusAccepted)
+// ExpectStatus compares the expected status code against the recorded status code.
+func (r *Resp) ExpectStatus(t *testing.T, code int) *Resp {
+	t.Helper()
+
+	if r.Rec.Code != code {
+		t.Errorf("unexpected status code: expected=%d got %d", code, r.Rec.Code)
+	}
+	return r
 }
 
-// StatusNoContent verifies the status code is 204 (Status No Content).
-func StatusNoContent() RecTestFn {
-	return Status(http.StatusNoContent)
+// ExpectBody provides an assertion against the recorder body.
+func (r *Resp) ExpectBody(fn func(*bytes.Buffer)) *Resp {
+	fn(r.Rec.Body)
+	return r
 }
 
-// StatusPartialContent verifies the status code is 206 (Status Partial Content).
-func StatusPartialContent() RecTestFn {
-	return Status(http.StatusPartialContent)
-}
+// ExpectHeader asserts that the header is in the recorder.
+func (r *Resp) ExpectHeader(t *testing.T, k, v string) *Resp {
+	t.Helper()
 
-// StatusNotFound verifies the status code is 404 (Status Not Found).
-func StatusNotFound() RecTestFn {
-	return Status(http.StatusNotFound)
-}
+	vals, ok := r.Rec.Header()[k]
+	if !ok {
+		t.Errorf("did not find expected header: %q", k)
+		return r
+	}
 
-// StatusUnprocessableEntity verifies the status code is 422 (Status Unprocessable Entity).
-func StatusUnprocessableEntity() RecTestFn {
-	return Status(http.StatusUnprocessableEntity)
-}
+	for _, vv := range vals {
+		if vv == v {
+			return r
+		}
+	}
+	t.Errorf("did not find expected value for header %q; got: %v", k, vals)
 
-// StatusInternalServerError verifies the status code is 500 (Status Internal Server Error).
-func StatusInternalServerError() RecTestFn {
-	return Status(http.StatusInternalServerError)
-}
-
-// StatusNotImplemented verifies the status code is 501 (Status Not Implemented).
-func StatusNotImplemented() RecTestFn {
-	return Status(http.StatusNotImplemented)
+	return r
 }

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/jsteenb2/testttp"
@@ -13,40 +12,37 @@ import (
 
 func TestHTTP(t *testing.T) {
 	svr := newMux()
-	t.Run("GET", func(t *testing.T) {
-		testttp.GET(
-			t, svr, "/",
-			testttp.StatusOK(),
-			testttp.Resp(assertResp(http.MethodGet)),
-		)
+	t.Run("Get", func(t *testing.T) {
+		testttp.Get("/").
+			Do(svr).
+			ExpectStatus(t, http.StatusOK).
+			ExpectBody(assertBody(t, http.MethodGet))
 	})
 
-	t.Run("POST", func(t *testing.T) {
-		testttp.POST(
-			t, svr, "/", nil,
-			testttp.StatusCreated(),
-			testttp.Resp(assertResp(http.MethodPost)),
-		)
+	t.Run("Post", func(t *testing.T) {
+		testttp.Post("/", nil).Do(svr).
+			ExpectStatus(t, http.StatusCreated).
+			ExpectBody(assertBody(t, http.MethodPost))
 	})
 
-	t.Run("PUT", func(t *testing.T) {
-		testttp.PUT(
-			t, svr, "/", nil,
-			testttp.StatusAccepted(),
-			testttp.Resp(assertResp(http.MethodPut)),
-		)
+	t.Run("Put", func(t *testing.T) {
+		testttp.Put("/", nil).
+			Do(svr).
+			ExpectStatus(t, http.StatusAccepted).
+			ExpectBody(assertBody(t, http.MethodPut))
 	})
 
-	t.Run("PATCH", func(t *testing.T) {
-		testttp.PATCH(
-			t, svr, "/", nil,
-			testttp.StatusPartialContent(),
-			testttp.Resp(assertResp(http.MethodPatch)),
-		)
+	t.Run("Patch", func(t *testing.T) {
+		testttp.Patch("/", nil).
+			Do(svr).
+			ExpectStatus(t, http.StatusPartialContent).
+			ExpectBody(assertBody(t, http.MethodPatch))
 	})
 
-	t.Run("DELETE", func(t *testing.T) {
-		testttp.DELETE(t, svr, "/", testttp.StatusNoContent())
+	t.Run("Delete", func(t *testing.T) {
+		testttp.Delete("/").
+			Do(svr).
+			ExpectStatus(t, http.StatusNoContent)
 	})
 }
 
@@ -73,10 +69,10 @@ func newMux() http.Handler {
 	return mux
 }
 
-func assertResp(method string) func(t *testing.T, w *httptest.ResponseRecorder) {
-	return func(t *testing.T, w *httptest.ResponseRecorder) {
+func assertBody(t *testing.T, method string) func(*bytes.Buffer) {
+	return func(buf *bytes.Buffer) {
 		var f foo
-		if err := json.NewDecoder(w.Body).Decode(&f); err != nil {
+		if err := json.NewDecoder(buf).Decode(&f); err != nil {
 			t.Fatal(err)
 		}
 		expected := foo{Name: "name", Thing: "thing", Method: method}
