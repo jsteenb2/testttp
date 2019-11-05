@@ -95,7 +95,7 @@ func (r *Resp) ExpectStatus(t *testing.T, code int) *Resp {
 	t.Helper()
 
 	if r.Rec.Code != code {
-		t.Errorf("unexpected status code: expected=%d got %d", code, r.Rec.Code)
+		t.Errorf("unexpected status code: expected=%d got=%d", code, r.Rec.Code)
 	}
 	return r
 }
