@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/jsteenb2/testttp"
@@ -43,6 +44,15 @@ func TestHTTP(t *testing.T) {
 		testttp.Delete("/").
 			Do(svr).
 			ExpectStatus(t, http.StatusNoContent)
+	})
+
+	t.Run("Headers", func(t *testing.T) {
+		testttp.Post("/", strings.NewReader(`a: foo`)).
+			Headers("Content-Type", "text/yml").
+			Do(svr).
+			Expect(func(resp *testttp.Resp) {
+				equals(t, "text/yml", resp.Req.Header.Get("Content-Type"))
+			})
 	})
 }
 
